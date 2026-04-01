@@ -1,0 +1,27 @@
+services:
+  api:
+    container_name: synapse-api
+    build: .
+    ports:
+      - "50000:8000"
+    volumes:
+      # السلك ده مهم جداً عشان الحاوية تقدر تتحكم في باقي السيرفر
+      - /var/run/docker.sock:/var/run/docker.sock
+    env_file:
+      # تركيب الخزنة السرية
+      - .env
+    restart: unless-stopped
+
+  synapse-db:
+    container_name: synapse-db
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: synapse
+    restart: unless-stopped
+
+  synapse-valkey:
+    container_name: synapse-valkey
+    image: valkey/valkey:latest
+    restart: unless-stopped
