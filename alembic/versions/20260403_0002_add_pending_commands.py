@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
@@ -18,7 +19,15 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
-command_status = sa.Enum("pending", "dispatched", "acked", "failed", name="command_status")
+command_status = postgresql.ENUM(
+    "pending",
+    "dispatched",
+    "acked",
+    "failed",
+    name="command_status",
+    create_type=False,
+    _create_events=False,
+)
 
 
 def upgrade() -> None:
