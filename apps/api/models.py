@@ -179,6 +179,15 @@ class PendingCommand(Base):
     agent: Mapped[Agent] = relationship(back_populates="pending_commands")
 
 
+class SnsMessageLog(Base):
+    __tablename__ = "sns_message_logs"
+
+    message_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    topic_arn: Mapped[str] = mapped_column(String(255), nullable=False)
+    processed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    raw_payload: Mapped[dict | None] = mapped_column(JSON)
+
+
 Index("ix_agents_tenant_id", Agent.tenant_id)
 Index("ix_agents_last_heartbeat", Agent.last_heartbeat_at)
 Index("ix_incidents_tenant_id", Incident.tenant_id)
@@ -187,3 +196,4 @@ Index("ix_incidents_occurred_at", Incident.occurred_at)
 Index("ix_marketplace_customers_tenant_id", MarketplaceCustomer.tenant_id)
 Index("ix_pending_commands_tenant_agent_status", PendingCommand.tenant_id, PendingCommand.agent_id, PendingCommand.status)
 Index("ix_pending_commands_created_at", PendingCommand.created_at)
+Index("ix_sns_message_logs_processed_at", SnsMessageLog.processed_at)

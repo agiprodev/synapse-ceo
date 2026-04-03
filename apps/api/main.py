@@ -1,8 +1,10 @@
 from fastapi import FastAPI
 import httpx, docker, os
 from orchestrator import run_strategic_meeting
+from apps.api.aws_sns import router as aws_sns_router
 
 app = FastAPI(title="Synapse Boardroom V2")
+app.include_router(aws_sns_router)
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
