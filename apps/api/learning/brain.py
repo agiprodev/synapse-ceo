@@ -37,6 +37,11 @@ class DecisionEngine:
             return {"status": "EXECUTING_NOW", "details": decision}
         else:
             action_id = ApprovalManager.create_pending({
-                "command": action, "target": target, "incident_text": incident_text, "confidence": confidence
+                "command": action,
+                "target": target,
+                "incident_text": incident_text,
+                "confidence": confidence,
+                "customer_id": incident_data.get("customer_id"),
+                "agent_id": incident_data.get("agent_id"),
             })
             return {"status": "PENDING_APPROVAL", "action_id": action_id, "details": decision}

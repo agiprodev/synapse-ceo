@@ -42,6 +42,13 @@ class IncidentStatus(str, enum.Enum):
     CLOSED = "closed"
 
 
+class CommandStatus(str, enum.Enum):
+    PENDING = "pending"
+    DISPATCHED = "dispatched"
+    ACKED = "acked"
+    FAILED = "failed"
+
+
 class Tenant(Base):
     __tablename__ = "tenants"
 
@@ -65,6 +72,10 @@ class Tenant(Base):
 
     agents: Mapped[list["Agent"]] = relationship(back_populates="tenant", cascade="all, delete-orphan")
     incidents: Mapped[list["Incident"]] = relationship(back_populates="tenant", cascade="all, delete-orphan")
+    pending_commands: Mapped[list["PendingCommand"]] = relationship(
+        back_populates="tenant",
+        cascade="all, delete-orphan",
+    )
     marketplace_customer: Mapped["MarketplaceCustomer | None"] = relationship(
         back_populates="tenant",
         uselist=False,
@@ -91,6 +102,7 @@ class Agent(Base):
 
     tenant: Mapped[Tenant] = relationship(back_populates="agents")
     incidents: Mapped[list["Incident"]] = relationship(back_populates="agent")
+    pending_commands: Mapped[list["PendingCommand"]] = relationship(back_populates="agent")
 
 
 class Incident(Base):
@@ -141,9 +153,37 @@ class MarketplaceCustomer(Base):
     tenant: Mapped[Tenant] = relationship(back_populates="marketplace_customer")
 
 
+class PendingCommand(Base):
+    __tablename__ = "pending_commands"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    agent_id: Mapped[str] = mapped_column(ForeignKey("agents.id", ondelete="CASCADE"), nullable=False)
+    command: Mapped[str] = mapped_column(String(128), nullable=False)
+    target: Mapped[str] = mapped_column(String(255), nullable=False)
+    signature: Mapped[str] = mapped_column(String(255), nullable=False)
+    incident_text: Mapped[str | None] = mapped_column(Text)
+    confidence: Mapped[float | None] = mapped_column(Float)
+    status: Mapped[CommandStatus] = mapped_column(
+        Enum(CommandStatus, name="command_status"),
+        default=CommandStatus.PENDING,
+        nullable=False,
+    )
+    ack_message: Mapped[str | None] = mapped_column(Text)
+    result_payload: Mapped[dict | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    dispatched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    acked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    tenant: Mapped[Tenant] = relationship(back_populates="pending_commands")
+    agent: Mapped[Agent] = relationship(back_populates="pending_commands")
+
+
 Index("ix_agents_tenant_id", Agent.tenant_id)
 Index("ix_agents_last_heartbeat", Agent.last_heartbeat_at)
 Index("ix_incidents_tenant_id", Incident.tenant_id)
 Index("ix_incidents_agent_id", Incident.agent_id)
 Index("ix_incidents_occurred_at", Incident.occurred_at)
 Index("ix_marketplace_customers_tenant_id", MarketplaceCustomer.tenant_id)
+Index("ix_pending_commands_tenant_agent_status", PendingCommand.tenant_id, PendingCommand.agent_id, PendingCommand.status)
+Index("ix_pending_commands_created_at", PendingCommand.created_at)
