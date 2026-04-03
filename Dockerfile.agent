@@ -1,0 +1,12 @@
+FROM python:3.11-alpine
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /agent
+
+RUN pip install --no-cache-dir httpx
+
+COPY agent ./agent
+
+CMD ["python", "-m", "agent.synapse_agent"]
