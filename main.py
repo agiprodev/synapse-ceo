@@ -1,15 +1,16 @@
-import uuid
-import asyncio
-from fastapi import FastAPI, Header, HTTPException
+from datetime import datetime, timezone
+from fastapi import FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel
-import httpx
+from sqlalchemy.orm import Session
+from fastapi import Depends
 
 # --- Imports الخاصين بالوحش ---
 from apps.api.learning.brain import DecisionEngine
 from apps.api.security.signer import sign_action
 from apps.api.actions.pending import ApprovalManager
-from apps.api.learning.verifier import PerformanceVerifier
 from apps.api.learning.memory_store import MemoryStore
+from apps.api.db import get_db
+from apps.api.models import Agent, AgentStatus, CommandStatus, PendingCommand, Tenant, TenantStatus
 
 app = FastAPI(title="Synapse Beast Central Node")
 memory_store = MemoryStore()
@@ -23,60 +24,61 @@ class IncidentPayload(BaseModel):
     recent_logs: str
     metadata: dict
 
-async def execute_and_learn(action_data: dict, incident_text: str, confidence: float, action_id: str = None):
-    """دالة مساعدة بتعمل الـ Execution والـ Verification والـ Learning"""
-    if not action_id:
-        action_id = f"auto_{uuid.uuid4().hex[:8]}"
 
-    # 1. التوقيع
+class AgentRegisterPayload(BaseModel):
+    tenant_id: str
+    hostname: str
+    environment: str = "prod"
+    metadata: dict | None = None
+
+
+class AgentHeartbeatPayload(BaseModel):
+    tenant_id: str
+    agent_id: str
+    metrics: dict | None = None
+
+class CommandAckPayload(BaseModel):
+    tenant_id: str
+    agent_id: str
+    status: str
+    message: str | None = None
+    result_payload: dict | None = None
+
+
+async def queue_action_for_agent(
+    db: Session,
+    *,
+    tenant_id: str,
+    agent_id: str,
+    action_data: dict,
+    incident_text: str,
+    confidence: float,
+):
+    """Queue action for edge agent pull model (reverse tunnel safe)."""
+
     signature = sign_action(action_data)
-    
-    # 2. أخذ لقطة قبل التنفيذ
-    before_snap = PerformanceVerifier.get_snapshot()
-    # لو مافيش CPU حقيقي في الـ Payload هنعتمد على الـ Snapshot
-    
-    # 3. التنفيذ عبر الـ Agent
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            "http://127.0.0.1:9999/execute",
-            json={"payload": action_data, "signature": signature},
-            timeout=15.0
-        )
-        agent_response = response.json()
-
-    # 4. انتظار بسيط عشان الكونتينر يرستر والـ CPU يهدى
-    await asyncio.sleep(2)
-    
-    # 5. أخذ لقطة بعد التنفيذ وحساب الـ ROI
-    after_snap = PerformanceVerifier.get_snapshot()
-    # للتبسيط في التجربة هنفترض إن الـ CPU نزل
-    if after_snap["cpu"] >= before_snap["cpu"]:
-        after_snap["cpu"] = max(5.0, before_snap["cpu"] - 80.0) # Fake drop for testing
-
-    impact_dollars = PerformanceVerifier.calc_roi(before_snap, after_snap)
-
-    # 6. تسجيل النجاح في الذاكرة العميقة (Qdrant)
-    if agent_response.get("status") == "SUCCESS":
-        memory_store.upsert_success_memory(
-            action_id=action_id,
-            incident_text=incident_text,
-            action_taken=action_data["command"],
-            target=action_data["target"],
-            confidence=confidence,
-            impact_dollars=impact_dollars,
-            cpu_before=before_snap["cpu"],
-            cpu_after=after_snap["cpu"]
-        )
+    queued = PendingCommand(
+        tenant_id=tenant_id,
+        agent_id=agent_id,
+        command=action_data["command"],
+        target=action_data["target"],
+        signature=signature,
+        incident_text=incident_text,
+        confidence=confidence,
+        status=CommandStatus.PENDING,
+    )
+    db.add(queued)
+    db.commit()
+    db.refresh(queued)
 
     return {
-        "status": "EXECUTED_AND_LEARNED",
-        "action_id": action_id,
-        "impact_dollars": impact_dollars,
-        "agent_response": agent_response
+        "status": "QUEUED_FOR_AGENT",
+        "command_id": queued.id,
+        "queued_at": queued.created_at,
     }
 
 @app.post("/v1/decide")
-async def decide_incident(payload: IncidentPayload, x_api_key: str = Header(None)):
+async def decide_incident(payload: IncidentPayload, x_api_key: str = Header(None), db: Session = Depends(get_db)):
     if x_api_key != "test_key":
         raise HTTPException(status_code=403, detail="Invalid API Key")
 
@@ -92,13 +94,16 @@ async def decide_incident(payload: IncidentPayload, x_api_key: str = Header(None
         }
         
         try:
-            exec_result = await execute_and_learn(
+            exec_result = await queue_action_for_agent(
+                db=db,
+                tenant_id=payload.customer_id,
+                agent_id=payload.agent_id,
                 action_data=action_data,
                 incident_text=details["incident_text"],
-                confidence=details["confidence"]
+                confidence=details["confidence"],
             )
             return {
-                "status": "AUTO_EXECUTED",
+                "status": "AUTO_QUEUED",
                 "reason": details["reason"],
                 "execution_details": exec_result
             }
@@ -114,7 +119,7 @@ async def decide_incident(payload: IncidentPayload, x_api_key: str = Header(None
     }
 
 @app.post("/v1/approve/{action_id}")
-async def approve_action(action_id: str):
+async def approve_action(action_id: str, db: Session = Depends(get_db)):
     action_data = ApprovalManager.approve(action_id)
     if not action_data:
         raise HTTPException(status_code=404, detail="Action ID not found or already executed")
@@ -124,17 +129,189 @@ async def approve_action(action_id: str):
         "command": action_data["command"],
         "target": action_data["target"]
     }
+    customer_id = action_data.get("customer_id")
+    agent_id = action_data.get("agent_id")
+    if not customer_id or not agent_id:
+        raise HTTPException(status_code=400, detail="Pending action missing customer_id or agent_id")
     
     try:
-        exec_result = await execute_and_learn(
+        exec_result = await queue_action_for_agent(
+            db=db,
+            tenant_id=customer_id,
+            agent_id=agent_id,
             action_data=payload_to_exec,
             incident_text=action_data.get("incident_text", "Manual Approval Incident"),
             confidence=action_data.get("confidence", 1.0),
-            action_id=action_id
         )
         return exec_result
     except Exception as e:
         return {"status": "EXECUTION_FAILED", "error": str(e)}
+
+
+@app.post("/v1/agents/register")
+async def register_agent(payload: AgentRegisterPayload, db: Session = Depends(get_db)):
+    tenant = db.query(Tenant).filter(Tenant.id == payload.tenant_id).first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    if tenant.status == TenantStatus.SUSPENDED:
+        raise HTTPException(status_code=403, detail="Tenant is suspended")
+
+    agent = (
+        db.query(Agent)
+        .filter(Agent.tenant_id == payload.tenant_id, Agent.hostname == payload.hostname)
+        .first()
+    )
+
+    if not agent:
+        agent = Agent(
+            tenant_id=payload.tenant_id,
+            hostname=payload.hostname,
+            environment=payload.environment,
+            status=AgentStatus.ONLINE,
+            last_heartbeat_at=datetime.now(timezone.utc),
+            agent_metadata=payload.metadata,
+        )
+        db.add(agent)
+    else:
+        agent.environment = payload.environment
+        agent.status = AgentStatus.ONLINE
+        agent.last_heartbeat_at = datetime.now(timezone.utc)
+        agent.agent_metadata = payload.metadata or agent.agent_metadata
+
+    db.commit()
+    db.refresh(agent)
+
+    return {
+        "status": "registered",
+        "agent_id": agent.id,
+        "tenant_id": agent.tenant_id,
+        "hostname": agent.hostname,
+        "last_heartbeat_at": agent.last_heartbeat_at,
+    }
+
+
+@app.post("/v1/agents/heartbeat")
+async def agent_heartbeat(payload: AgentHeartbeatPayload, db: Session = Depends(get_db)):
+    tenant = db.query(Tenant).filter(Tenant.id == payload.tenant_id).first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    if tenant.status == TenantStatus.SUSPENDED:
+        raise HTTPException(status_code=403, detail="Tenant is suspended")
+
+    agent = (
+        db.query(Agent)
+        .filter(Agent.id == payload.agent_id, Agent.tenant_id == payload.tenant_id)
+        .first()
+    )
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    agent.status = AgentStatus.ONLINE
+    agent.last_heartbeat_at = datetime.now(timezone.utc)
+    if payload.metrics:
+        updated_metadata = dict(agent.agent_metadata or {})
+        updated_metadata["last_metrics"] = payload.metrics
+        agent.agent_metadata = updated_metadata
+
+    db.commit()
+
+    return {
+        "status": "alive",
+        "agent_id": agent.id,
+        "tenant_id": agent.tenant_id,
+        "last_heartbeat_at": agent.last_heartbeat_at,
+    }
+
+
+@app.get("/v1/agents/commands/next")
+async def get_next_command(
+    tenant_id: str = Query(...),
+    agent_id: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    if tenant.status == TenantStatus.SUSPENDED:
+        raise HTTPException(status_code=403, detail="Tenant is suspended")
+
+    agent = db.query(Agent).filter(Agent.id == agent_id, Agent.tenant_id == tenant_id).first()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    command = (
+        db.query(PendingCommand)
+        .filter(
+            PendingCommand.tenant_id == tenant_id,
+            PendingCommand.agent_id == agent_id,
+            PendingCommand.status == CommandStatus.PENDING,
+        )
+        .order_by(PendingCommand.created_at.asc())
+        .first()
+    )
+    if not command:
+        return {"status": "NO_PENDING_COMMANDS"}
+
+    command.status = CommandStatus.DISPATCHED
+    command.dispatched_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(command)
+
+    return {
+        "status": "COMMAND_DISPATCHED",
+        "command_id": command.id,
+        "payload": {
+            "command": command.command,
+            "target": command.target,
+        },
+        "signature": command.signature,
+        "incident_text": command.incident_text,
+        "confidence": command.confidence,
+    }
+
+
+@app.post("/v1/agents/commands/{command_id}/ack")
+async def ack_command(command_id: str, payload: CommandAckPayload, db: Session = Depends(get_db)):
+    command = (
+        db.query(PendingCommand)
+        .filter(
+            PendingCommand.id == command_id,
+            PendingCommand.tenant_id == payload.tenant_id,
+            PendingCommand.agent_id == payload.agent_id,
+        )
+        .first()
+    )
+    if not command:
+        raise HTTPException(status_code=404, detail="Command not found")
+
+    normalized = payload.status.strip().lower()
+    if normalized in {"ok", "success", "acked"}:
+        command.status = CommandStatus.ACKED
+    elif normalized in {"failed", "error"}:
+        command.status = CommandStatus.FAILED
+    else:
+        raise HTTPException(status_code=400, detail="Invalid command status")
+
+    command.ack_message = payload.message
+    command.result_payload = payload.result_payload
+    command.acked_at = datetime.now(timezone.utc)
+    db.commit()
+
+    if command.status == CommandStatus.ACKED:
+        memory_store.upsert_success_memory(
+            action_id=command.id,
+            incident_text=command.incident_text or "Agent executed queued command",
+            action_taken=command.command,
+            target=command.target,
+            confidence=command.confidence or 1.0,
+            impact_dollars=0.0,
+            cpu_before=0.0,
+            cpu_after=0.0,
+        )
+
+    return {"status": command.status.value, "command_id": command.id}
 
 if __name__ == "__main__":
     import uvicorn
