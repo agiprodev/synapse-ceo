@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -24,6 +25,11 @@ from apps.api.models import (
 
 app = FastAPI(title="Synapse Beast Central Node")
 memory_store = MemoryStore()
+
+
+@app.get("/dashboard", include_in_schema=False)
+async def dashboard_page():
+    return FileResponse("dashboard.html")
 
 class IncidentPayload(BaseModel):
     customer_id: str

@@ -1,23 +1,71 @@
 services:
-  api:
-    container_name: synapse-api
-    build: .
+  postgres:
+    image: postgres:16-alpine
+    container_name: synapse-postgres
+    environment:
+      POSTGRES_DB: synapse
+      POSTGRES_USER: synapse
+      POSTGRES_PASSWORD: synapse
     ports:
-      - "50000:8000"
+      - "5432:5432"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    env_file:
-      - .env
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U synapse -d synapse"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend:
+    container_name: synapse-backend
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    environment:
+      DATABASE_URL: postgresql+psycopg2://synapse:synapse@postgres:5432/synapse
+    ports:
+      - "5555:5555"
     depends_on:
-      - qdrant
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5555/dashboard', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+
+  seed-demo:
+    container_name: synapse-seed-demo
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    environment:
+      DATABASE_URL: postgresql+psycopg2://synapse:synapse@postgres:5432/synapse
+    command: ["python", "seed_demo.py", "--reset"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    restart: "no"
+
+  agent:
+    container_name: synapse-agent
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    environment:
+      SYNAPSE_API_BASE_URL: http://backend:5555
+      SYNAPSE_TENANT_ID: demo-tenant
+      SYNAPSE_AGENT_HOSTNAME: demo-edge-agent-01
+      SYNAPSE_AGENT_ENV: prod
+    depends_on:
+      backend:
+        condition: service_healthy
+      seed-demo:
+        condition: service_completed_successfully
     restart: unless-stopped
 
-  qdrant:
-    image: qdrant/qdrant:latest
-    container_name: synapse-memory
-    ports:
-      - "6333:6333"
-      - "6334:6334"
-    volumes:
-      - ./qdrant_storage:/qdrant/storage
-    restart: unless-stopped
+volumes:
+  postgres_data:
