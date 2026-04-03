@@ -18,9 +18,9 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
-tenant_status = sa.Enum("active", "suspended", "trial", name="tenant_status")
-agent_status = sa.Enum("online", "offline", "degraded", name="agent_status")
-incident_status = sa.Enum("open", "auto_resolved", "escalated", "closed", name="incident_status")
+tenant_status = sa.Enum("active", "suspended", "trial", name="tenant_status", create_type=False)
+agent_status = sa.Enum("online", "offline", "degraded", name="agent_status", create_type=False)
+incident_status = sa.Enum("open", "auto_resolved", "escalated", "closed", name="incident_status", create_type=False)
 
 
 def upgrade() -> None:
