@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
@@ -18,9 +19,9 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
-tenant_status = sa.Enum("active", "suspended", "trial", name="tenant_status", create_type=False)
-agent_status = sa.Enum("online", "offline", "degraded", name="agent_status", create_type=False)
-incident_status = sa.Enum("open", "auto_resolved", "escalated", "closed", name="incident_status", create_type=False)
+tenant_status = postgresql.ENUM("active", "suspended", "trial", name="tenant_status", create_type=False)
+agent_status = postgresql.ENUM("online", "offline", "degraded", name="agent_status", create_type=False)
+incident_status = postgresql.ENUM("open", "auto_resolved", "escalated", "closed", name="incident_status", create_type=False)
 
 
 def upgrade() -> None:
