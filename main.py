@@ -1,6 +1,7 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from fastapi import FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from fastapi import Depends
 
@@ -10,7 +11,16 @@ from apps.api.security.signer import sign_action
 from apps.api.actions.pending import ApprovalManager
 from apps.api.learning.memory_store import MemoryStore
 from apps.api.db import get_db
-from apps.api.models import Agent, AgentStatus, CommandStatus, PendingCommand, Tenant, TenantStatus
+from apps.api.models import (
+    Agent,
+    AgentStatus,
+    CommandStatus,
+    Incident,
+    IncidentStatus,
+    PendingCommand,
+    Tenant,
+    TenantStatus,
+)
 
 app = FastAPI(title="Synapse Beast Central Node")
 memory_store = MemoryStore()
@@ -43,6 +53,33 @@ class CommandAckPayload(BaseModel):
     status: str
     message: str | None = None
     result_payload: dict | None = None
+
+
+class DashboardIncidentItem(BaseModel):
+    id: str
+    title: str
+    status: str
+    cpu_percent: float | None = None
+    error_rate: float | None = None
+    action_taken: str | None = None
+    impact_dollars: float | None = None
+    occurred_at: datetime
+    resolved_at: datetime | None = None
+
+
+class DashboardIncidentsResponse(BaseModel):
+    tenant_id: str
+    total: int
+    incidents: list[DashboardIncidentItem]
+
+
+class DashboardRoiResponse(BaseModel):
+    tenant_id: str
+    incidents_count: int
+    auto_resolved_count: int
+    escalated_count: int
+    total_impact_dollars: float
+    period_days: int
 
 
 async def queue_action_for_agent(
@@ -312,6 +349,85 @@ async def ack_command(command_id: str, payload: CommandAckPayload, db: Session =
         )
 
     return {"status": command.status.value, "command_id": command.id}
+
+
+@app.get("/v1/dashboard/incidents", response_model=DashboardIncidentsResponse)
+async def dashboard_incidents(
+    tenant_id: str = Query(...),
+    limit: int = Query(50, ge=1, le=200),
+    status: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    query = db.query(Incident).filter(Incident.tenant_id == tenant_id)
+    if status:
+        normalized = status.strip().lower()
+        allowed = {item.value for item in IncidentStatus}
+        if normalized not in allowed:
+            raise HTTPException(status_code=400, detail="Invalid incident status filter")
+        query = query.filter(Incident.status == IncidentStatus(normalized))
+
+    rows = query.order_by(Incident.occurred_at.desc()).limit(limit).all()
+
+    return DashboardIncidentsResponse(
+        tenant_id=tenant_id,
+        total=len(rows),
+        incidents=[
+            DashboardIncidentItem(
+                id=row.id,
+                title=row.title,
+                status=row.status.value,
+                cpu_percent=row.cpu_percent,
+                error_rate=row.error_rate,
+                action_taken=row.action_taken,
+                impact_dollars=row.impact_dollars,
+                occurred_at=row.occurred_at,
+                resolved_at=row.resolved_at,
+            )
+            for row in rows
+        ],
+    )
+
+
+@app.get("/v1/dashboard/roi", response_model=DashboardRoiResponse)
+async def dashboard_roi(
+    tenant_id: str = Query(...),
+    days: int = Query(30, ge=1, le=365),
+    db: Session = Depends(get_db),
+):
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    window_start = datetime.now(timezone.utc) - timedelta(days=days)
+    base_query = db.query(Incident).filter(
+        Incident.tenant_id == tenant_id,
+        Incident.occurred_at >= window_start,
+    )
+
+    incidents_count = base_query.count()
+    auto_resolved_count = base_query.filter(Incident.status == IncidentStatus.AUTO_RESOLVED).count()
+    escalated_count = base_query.filter(Incident.status == IncidentStatus.ESCALATED).count()
+    total_impact_dollars = (
+        db.query(func.coalesce(func.sum(Incident.impact_dollars), 0.0))
+        .filter(
+            Incident.tenant_id == tenant_id,
+            Incident.occurred_at >= window_start,
+        )
+        .scalar()
+    )
+
+    return DashboardRoiResponse(
+        tenant_id=tenant_id,
+        incidents_count=incidents_count,
+        auto_resolved_count=auto_resolved_count,
+        escalated_count=escalated_count,
+        total_impact_dollars=float(total_impact_dollars or 0.0),
+        period_days=days,
+    )
 
 if __name__ == "__main__":
     import uvicorn
