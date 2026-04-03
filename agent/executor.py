@@ -1,5 +1,5 @@
 import subprocess
-from apps.api.security.signer import verify_action
+from agent.signer import verify_action
 
 # ⚡ الآن: أوامر حقيقية تغير حالة السيرفر
 ALLOWED_COMMANDS = {
