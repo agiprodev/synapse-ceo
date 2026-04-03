@@ -19,9 +19,31 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
-tenant_status = postgresql.ENUM("active", "suspended", "trial", name="tenant_status", create_type=False)
-agent_status = postgresql.ENUM("online", "offline", "degraded", name="agent_status", create_type=False)
-incident_status = postgresql.ENUM("open", "auto_resolved", "escalated", "closed", name="incident_status", create_type=False)
+tenant_status = postgresql.ENUM(
+    "active",
+    "suspended",
+    "trial",
+    name="tenant_status",
+    create_type=False,
+    _create_events=False,
+)
+agent_status = postgresql.ENUM(
+    "online",
+    "offline",
+    "degraded",
+    name="agent_status",
+    create_type=False,
+    _create_events=False,
+)
+incident_status = postgresql.ENUM(
+    "open",
+    "auto_resolved",
+    "escalated",
+    "closed",
+    name="incident_status",
+    create_type=False,
+    _create_events=False,
+)
 
 
 def upgrade() -> None:

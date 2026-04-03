@@ -23,6 +23,10 @@ class Base(DeclarativeBase):
     pass
 
 
+def _enum_values(enum_cls: type[enum.Enum]) -> list[str]:
+    return [member.value for member in enum_cls]
+
+
 class TenantStatus(str, enum.Enum):
     ACTIVE = "active"
     SUSPENDED = "suspended"
@@ -57,7 +61,7 @@ class Tenant(Base):
     external_ref: Mapped[str | None] = mapped_column(String(255), unique=True)
     api_key_hash: Mapped[str | None] = mapped_column(String(255))
     status: Mapped[TenantStatus] = mapped_column(
-        Enum(TenantStatus, name="tenant_status"),
+        Enum(TenantStatus, name="tenant_status", values_callable=_enum_values),
         default=TenantStatus.TRIAL,
         nullable=False,
     )
@@ -92,7 +96,7 @@ class Agent(Base):
     hostname: Mapped[str] = mapped_column(String(255), nullable=False)
     environment: Mapped[str] = mapped_column(String(64), default="prod", nullable=False)
     status: Mapped[AgentStatus] = mapped_column(
-        Enum(AgentStatus, name="agent_status"),
+        Enum(AgentStatus, name="agent_status", values_callable=_enum_values),
         default=AgentStatus.OFFLINE,
         nullable=False,
     )
@@ -117,7 +121,7 @@ class Incident(Base):
     error_rate: Mapped[float | None] = mapped_column(Float)
     cpu_percent: Mapped[float | None] = mapped_column(Float)
     status: Mapped[IncidentStatus] = mapped_column(
-        Enum(IncidentStatus, name="incident_status"),
+        Enum(IncidentStatus, name="incident_status", values_callable=_enum_values),
         default=IncidentStatus.OPEN,
         nullable=False,
     )
@@ -165,7 +169,7 @@ class PendingCommand(Base):
     incident_text: Mapped[str | None] = mapped_column(Text)
     confidence: Mapped[float | None] = mapped_column(Float)
     status: Mapped[CommandStatus] = mapped_column(
-        Enum(CommandStatus, name="command_status"),
+        Enum(CommandStatus, name="command_status", values_callable=_enum_values),
         default=CommandStatus.PENDING,
         nullable=False,
     )
