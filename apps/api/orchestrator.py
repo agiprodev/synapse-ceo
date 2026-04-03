@@ -1,45 +1,72 @@
-import os
+import os, json
 from google import genai
-from typing import TypedDict
+from memory.service import MemoryService
+from memory.provider import GeminiEmbeddingProvider
+from memory.frappe_provider import FrappeProvider
 
-class State(TypedDict):
-    incident: str
-    cto_opinion: str
-    cfo_opinion: str
-    final_decision: str
-    action_button: str
-
+# Config
 API_KEY = os.getenv("GEMINI_API_KEY")
 client = genai.Client(api_key=API_KEY)
 
-def get_ai_response(role, prompt):
-    # Prompt معدل ليعطي تحليل عميق ومختصر في نفس الوقت
-    full_prompt = f"You are a {role}. Context: {prompt}. Analyze logs if any and give 1 short technical sentence about the root cause and solution."
+# Initialize
+try:
+    # استخدام الموديل الأضمن في الـ Embeddings
+    embedder = GeminiEmbeddingProvider(client, model="text-embedding-004")
+    memory = MemoryService(qdrant_url="http://qdrant:6333", embedding_provider=embedder)
+    frappe = FrappeProvider()
+except Exception as e:
+    print(f"⚠️ Init Warning: {e}")
+
+def get_structured_ai_analysis(role: str, context: str):
+    # استخدام 1.5 flash لأنه أهدى في الـ Quota
+    prompt = f"You are a {role}. Context: {context}. Return ONLY JSON with: 'reason', 'confidence', 'suggested_action'."
     try:
-        return client.models.generate_content(model='gemini-2.5-flash', contents=full_prompt).text.strip()
+        res = client.models.generate_content(
+            model='gemini-1.5-flash', 
+            contents=prompt, 
+            config={'response_mime_type': 'application/json'}
+        )
+        return json.loads(res.text)
     except Exception as e:
-        return f"GenAI Error: {str(e)}"
+        print(f"❌ AI Error: {e}")
+        return {"reason": "Quota Fallback", "confidence": 0.5, "suggested_action": "IGNORE"}
 
-def get_action_button(prompt):
-    full_prompt = f"Context: {prompt}. Based on this, reply ONLY with ONE word: [RESTART, CLEAR_CACHE, IGNORE]."
+def log_to_enterprise(meeting_result):
     try:
-        res = client.models.generate_content(model='gemini-2.5-flash', contents=full_prompt).text.strip().upper()
-        if "RESTART" in res: return "RESTART"
-        if "CLEAR" in res or "CACHE" in res: return "CLEAR_CACHE"
-        return "IGNORE"
-    except:
-        return "IGNORE"
+        # تأكد من أن يوزر الـ API له صلاحية على Communication
+        payload = {
+            "subject": f"AI Decision: {meeting_result['target_action']}",
+            "content": f"CEO Summary: {meeting_result['ceo_summary']}\nConfidence: {meeting_result['confidence']}",
+            "sent_or_received": "Sent",
+            "communication_type": "Communication"
+        }
+        return frappe.post_log("Communication", payload)
+    except Exception as e:
+        print(f"⚠️ Frappe Sync Failed: {e}")
+        return None
 
-def cto_agent(state: State):
-    state['cto_opinion'] = get_ai_response("Cloud CTO", f"Technical Context: {state['incident']}")
-    return state
+def run_strategic_meeting(incident_summary: str, current_cpu: float):
+    past_incidents = []
+    try:
+        past_incidents = memory.search_similar(incident_summary, limit=2)
+    except: pass
 
-def cfo_agent(state: State):
-    state['cfo_opinion'] = get_ai_response("Financial Officer", f"CTO says: {state['cto_opinion']}. Financial impact?")
-    return state
+    history_context = "\n".join([f"- Past: {h['text']}" for h in past_incidents]) if past_incidents else "No History."
 
-def ceo_agent(state: State):
-    # الـ CEO هنا بيلخص المشكلة والحل بناءً على كلام الخبراء
-    state['final_decision'] = get_ai_response("CEO", f"CTO: {state['cto_opinion']}, CFO: {state['cfo_opinion']}. Give final order.")
-    state['action_button'] = get_action_button(state['final_decision'])
-    return state
+    context = f"Current: {incident_summary}. History: {history_context}"
+    cto_res = get_structured_ai_analysis("CTO", context)
+    ceo_res = get_structured_ai_analysis("CEO", f"CTO says: {cto_res['reason']}. History: {history_context}")
+
+    result = {
+        "target_action": ceo_res.get('suggested_action', 'IGNORE'),
+        "ceo_summary": ceo_res.get('reason', 'Analyzed with fallback'),
+        "confidence": ceo_res.get('confidence', 0.9),
+        "history_found": len(past_incidents) > 0
+    }
+
+    try:
+        memory.upsert_incident(incident_summary, {"cpu": current_cpu, "decision": result['target_action']})
+    except: pass
+
+    log_to_enterprise(result)
+    return result

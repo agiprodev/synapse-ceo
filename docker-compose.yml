@@ -5,23 +5,19 @@ services:
     ports:
       - "50000:8000"
     volumes:
-      # السلك ده مهم جداً عشان الحاوية تقدر تتحكم في باقي السيرفر
       - /var/run/docker.sock:/var/run/docker.sock
     env_file:
-      # تركيب الخزنة السرية
       - .env
+    depends_on:
+      - qdrant
     restart: unless-stopped
 
-  synapse-db:
-    container_name: synapse-db
-    image: postgres:15-alpine
-    environment:
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: synapse
-    restart: unless-stopped
-
-  synapse-valkey:
-    container_name: synapse-valkey
-    image: valkey/valkey:latest
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: synapse-memory
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - ./qdrant_storage:/qdrant/storage
     restart: unless-stopped

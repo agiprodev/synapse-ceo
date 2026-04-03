@@ -1,0 +1,9 @@
+nohup: ignoring input
+INFO:     Started server process [2655007]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:5555 (Press CTRL+C to quit)
+/root/synapse-ceo/main.py:84: PydanticDeprecatedSince20: The `dict` method is deprecated; use `model_dump` instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  result = DecisionEngine.process_incident(payload.dict())
+INFO:     127.0.0.1:34052 - "POST /v1/decide HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36688 - "POST /v1/approve/b7c195d7 HTTP/1.1" 200 OK
