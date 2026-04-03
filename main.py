@@ -1,8 +1,11 @@
 import uuid
 import asyncio
+from datetime import datetime, timezone
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 import httpx
+from sqlalchemy.orm import Session
+from fastapi import Depends
 
 # --- Imports الخاصين بالوحش ---
 from apps.api.learning.brain import DecisionEngine
@@ -10,6 +13,8 @@ from apps.api.security.signer import sign_action
 from apps.api.actions.pending import ApprovalManager
 from apps.api.learning.verifier import PerformanceVerifier
 from apps.api.learning.memory_store import MemoryStore
+from apps.api.db import get_db
+from apps.api.models import Agent, AgentStatus, Tenant, TenantStatus
 
 app = FastAPI(title="Synapse Beast Central Node")
 memory_store = MemoryStore()
@@ -22,6 +27,19 @@ class IncidentPayload(BaseModel):
     disk_usage: float
     recent_logs: str
     metadata: dict
+
+
+class AgentRegisterPayload(BaseModel):
+    tenant_id: str
+    hostname: str
+    environment: str = "prod"
+    metadata: dict | None = None
+
+
+class AgentHeartbeatPayload(BaseModel):
+    tenant_id: str
+    agent_id: str
+    metrics: dict | None = None
 
 async def execute_and_learn(action_data: dict, incident_text: str, confidence: float, action_id: str = None):
     """دالة مساعدة بتعمل الـ Execution والـ Verification والـ Learning"""
@@ -135,6 +153,83 @@ async def approve_action(action_id: str):
         return exec_result
     except Exception as e:
         return {"status": "EXECUTION_FAILED", "error": str(e)}
+
+
+@app.post("/v1/agents/register")
+async def register_agent(payload: AgentRegisterPayload, db: Session = Depends(get_db)):
+    tenant = db.query(Tenant).filter(Tenant.id == payload.tenant_id).first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    if tenant.status == TenantStatus.SUSPENDED:
+        raise HTTPException(status_code=403, detail="Tenant is suspended")
+
+    agent = (
+        db.query(Agent)
+        .filter(Agent.tenant_id == payload.tenant_id, Agent.hostname == payload.hostname)
+        .first()
+    )
+
+    if not agent:
+        agent = Agent(
+            tenant_id=payload.tenant_id,
+            hostname=payload.hostname,
+            environment=payload.environment,
+            status=AgentStatus.ONLINE,
+            last_heartbeat_at=datetime.now(timezone.utc),
+            agent_metadata=payload.metadata,
+        )
+        db.add(agent)
+    else:
+        agent.environment = payload.environment
+        agent.status = AgentStatus.ONLINE
+        agent.last_heartbeat_at = datetime.now(timezone.utc)
+        agent.agent_metadata = payload.metadata or agent.agent_metadata
+
+    db.commit()
+    db.refresh(agent)
+
+    return {
+        "status": "registered",
+        "agent_id": agent.id,
+        "tenant_id": agent.tenant_id,
+        "hostname": agent.hostname,
+        "last_heartbeat_at": agent.last_heartbeat_at,
+    }
+
+
+@app.post("/v1/agents/heartbeat")
+async def agent_heartbeat(payload: AgentHeartbeatPayload, db: Session = Depends(get_db)):
+    tenant = db.query(Tenant).filter(Tenant.id == payload.tenant_id).first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    if tenant.status == TenantStatus.SUSPENDED:
+        raise HTTPException(status_code=403, detail="Tenant is suspended")
+
+    agent = (
+        db.query(Agent)
+        .filter(Agent.id == payload.agent_id, Agent.tenant_id == payload.tenant_id)
+        .first()
+    )
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    agent.status = AgentStatus.ONLINE
+    agent.last_heartbeat_at = datetime.now(timezone.utc)
+    if payload.metrics:
+        updated_metadata = dict(agent.agent_metadata or {})
+        updated_metadata["last_metrics"] = payload.metrics
+        agent.agent_metadata = updated_metadata
+
+    db.commit()
+
+    return {
+        "status": "alive",
+        "agent_id": agent.id,
+        "tenant_id": agent.tenant_id,
+        "last_heartbeat_at": agent.last_heartbeat_at,
+    }
 
 if __name__ == "__main__":
     import uvicorn
