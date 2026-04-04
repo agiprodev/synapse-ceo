@@ -55,15 +55,10 @@
     <div id="root"></div>
 
     <script type="text/babel">
-      const { useEffect, useMemo, useState } = React;
+      const { useEffect, useState, useMemo } = React;
 
       const MetricCard = ({ icon, label, value, hint, accent = "cyan", delay = 0 }) => (
-        <div
-          className={`group rounded-2xl border border-slate-800 bg-synapse-panel/90 p-5 shadow-glowCyan transition duration-300 hover:-translate-y-1 animate-enterUp ${
-            accent === "emerald" ? "hover:border-emerald-400/40" : "hover:border-cyan-400/40"
-          }`}
-          style={{ animationDelay: `${delay}ms` }}
-        >
+        <div className={`group rounded-2xl border border-slate-800 bg-synapse-panel/90 p-5 shadow-glowCyan transition duration-300 animate-enterUp ${accent === "emerald" ? "hover:border-emerald-400/40" : "hover:border-cyan-400/40"}`} style={{ animationDelay: `${delay}ms` }}>
           <div className="flex items-center justify-between">
             <p className="text-xs uppercase tracking-[0.18em] text-slate-400">{label}</p>
             <i data-lucide={icon} className={`h-4 w-4 ${accent === "emerald" ? "text-emerald-300" : "text-cyan-300"}`}></i>
@@ -73,126 +68,113 @@
         </div>
       );
 
-      const SparkChart = () => {
-        const points = useMemo(() => {
-          const arr = [];
-          for (let i = 0; i < 64; i++) {
-            const base = 52 + Math.sin(i / 4) * 8 + Math.random() * 2;
-            const spike = i > 24 && i < 32 ? (i - 24) * 6 : i >= 32 && i < 40 ? (40 - i) * 6 : 0;
-            const stabilized = i > 40 ? -Math.sin(i / 2) * 4 - 5 : 0;
-            const v = Math.max(20, Math.min(90, base + spike + stabilized));
-            arr.push(v);
-          }
-          return arr;
-        }, []);
-
-        const path = points
-          .map((v, i) => `${i === 0 ? "M" : "L"} ${(i / (points.length - 1)) * 100} ${100 - v}`)
-          .join(" ");
-
-        return (
-          <div className="relative overflow-hidden rounded-2xl border border-cyan-400/20 bg-gradient-to-br from-slate-950 to-synapse-panel p-6 shadow-glowCyan animate-enterUp">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-slate-100">Live Pulse Visualizer</h3>
-              <div className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-200">Spike Neutralized</div>
-            </div>
-            <div className="relative h-64 rounded-xl border border-slate-800 bg-slate-950/70 p-4">
-              <svg viewBox="0 0 100 100" className="h-full w-full">
-                <defs>
-                  <linearGradient id="lineGradient" x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0%" stopColor="#22d3ee" />
-                    <stop offset="100%" stopColor="#34d399" />
-                  </linearGradient>
-                </defs>
-                <path d={path} fill="none" stroke="url(#lineGradient)" strokeWidth="1.6" strokeLinecap="round">
-                  <animate attributeName="stroke-dasharray" values="0,300;300,0" dur="3s" repeatCount="indefinite" />
-                </path>
-              </svg>
-              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(56,189,248,0.15),transparent_50%)]"></div>
-              <div className="absolute right-4 top-4 text-xs text-slate-400">CPU / Memory Stream • 4ms tick</div>
-            </div>
-          </div>
-        );
-      };
-
       const App = () => {
-        const [confidence] = useState(94);
+        const [history, setHistory] = useState(Array(64).fill(10));
+        const [currentCpu, setCurrentCpu] = useState(0);
+        const [currentMem, setCurrentMem] = useState(0);
+        const [alert, setAlert] = useState(null);
 
         useEffect(() => {
           lucide.createIcons();
+
+          const eventSource = new EventSource("/stream");
+
+          eventSource.onmessage = (e) => {
+            const data = JSON.parse(e.data);
+
+            if (data.type === "metrics") {
+              setCurrentCpu(data.cpu);
+              setCurrentMem(data.mem);
+              setHistory((prev) => {
+                const newHistory = [...prev.slice(1), data.cpu];
+                return newHistory;
+              });
+            } else if (data.type === "alert") {
+              setAlert(data);
+            }
+          };
+
+          return () => eventSource.close();
         }, []);
+
+        const path = history.map((v, i) => `${i === 0 ? "M" : "L"} ${(i / (history.length - 1)) * 100} ${100 - v}`).join(" ");
 
         return (
           <main className="mx-auto max-w-7xl px-6 py-8 lg:px-10">
-            <nav className="mb-6 rounded-2xl border border-slate-800 bg-synapse-panel/90 p-4 shadow-glowCyan backdrop-blur animate-enterUp">
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="rounded-xl border border-cyan-400/30 bg-cyan-400/10 p-2">
-                    <i data-lucide="cpu" className="h-5 w-5 text-cyan-300"></i>
-                  </div>
-                  <div>
-                    <p className="text-sm uppercase tracking-[0.2em] text-slate-400">Rises</p>
-                    <h1 className="text-xl font-semibold text-slate-100">Synapse PRO</h1>
-                  </div>
+            <nav className="mb-6 flex flex-wrap items-center justify-between rounded-2xl border border-slate-800 bg-synapse-panel/90 p-4 shadow-glowCyan">
+              <div className="flex items-center gap-3">
+                <div className="rounded-xl border border-cyan-400/30 bg-cyan-400/10 p-2">
+                  <i data-lucide="cpu" className="h-5 w-5 text-cyan-300"></i>
                 </div>
-
-                <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-200 animate-pulseGlow">
-                    <span className="h-2 w-2 rounded-full bg-emerald-300"></span>
-                    Autonomous Mode Active
-                  </div>
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-700 bg-slate-900 text-sm font-semibold text-cyan-200">CTO</div>
+                <div>
+                  <p className="text-sm uppercase tracking-[0.2em] text-slate-400">Rises</p>
+                  <h1 className="text-xl font-semibold text-slate-100">Synapse PRO</h1>
+                </div>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-200 animate-pulseGlow">
+                  <span className="h-2 w-2 rounded-full bg-emerald-300"></span>
+                  Real-time Telemetry Linked
                 </div>
               </div>
             </nav>
 
             <section className="mb-6 grid gap-4 lg:grid-cols-3">
-              <MetricCard icon="shield-check" label="Incidents Prevented" value="14" hint="This week across production workloads" delay={50} />
-              <MetricCard icon="zap" label="Near-Zero MTTR" value="0.4s" hint="Average autonomous remediation window" delay={150} />
-              <MetricCard icon="banknote" label="Total Value Protected" value="$4,500" hint="Estimated outage + churn loss avoided" accent="emerald" delay={250} />
+              <MetricCard icon="server" label="Live CPU Load" value={`${currentCpu.toFixed(1)}%`} hint="Actual processing load" delay={50} />
+              <MetricCard icon="database" label="Memory Pressure" value={`${currentMem.toFixed(1)}%`} hint="Actual RAM utilization" delay={150} />
+              <MetricCard icon="shield-check" label="System Status" value={alert ? "Intervening" : "Stable"} hint={alert ? "Executing autonomous fix" : "All services optimal"} accent="emerald" delay={250} />
             </section>
 
             <section className="grid gap-6 lg:grid-cols-[1.35fr_1fr]">
-              <SparkChart />
-
-              <aside className="rounded-2xl border border-slate-800 bg-synapse-panel/90 p-6 shadow-glowGreen animate-enterUp">
+              <div className="relative overflow-hidden rounded-2xl border border-cyan-400/20 bg-gradient-to-br from-slate-950 to-synapse-panel p-6 shadow-glowCyan">
                 <div className="mb-4 flex items-center justify-between">
-                  <h3 className="text-lg font-semibold">Recent Autonomous Action</h3>
-                  <i data-lucide="bot" className="h-5 w-5 text-cyan-300"></i>
+                  <h3 className="text-lg font-semibold text-slate-100">Real-time Host Pulse</h3>
+                  {currentCpu > 80 && <div className="rounded-full border border-red-400/30 bg-red-400/10 px-3 py-1 text-xs text-red-200 animate-pulse">High Load Detected</div>}
+                </div>
+                <div className="relative h-64 rounded-xl border border-slate-800 bg-slate-950/70 p-4 transition-all">
+                  <svg viewBox="0 0 100 100" className="h-full w-full preserve-3d">
+                    <defs>
+                      <linearGradient id="lineGrad" x1="0" y1="0" x2="1" y2="0">
+                        <stop offset="0%" stopColor={currentCpu > 80 ? "#ef4444" : "#22d3ee"} />
+                        <stop offset="100%" stopColor={currentCpu > 80 ? "#f87171" : "#34d399"} />
+                      </linearGradient>
+                    </defs>
+                    <path d={path} fill="none" stroke="url(#lineGrad)" strokeWidth="1.6" strokeLinecap="round" className="transition-all duration-300 ease-linear" />
+                  </svg>
+                </div>
+              </div>
+
+              <aside className={`rounded-2xl border ${alert ? 'border-emerald-500/50 shadow-glowGreen' : 'border-slate-800'} bg-synapse-panel/90 p-6 transition-all duration-500`}>
+                <div className="mb-4 flex items-center justify-between">
+                  <h3 className="text-lg font-semibold">Autonomous Execution</h3>
+                  <i data-lucide="bot" className={`h-5 w-5 ${alert ? 'text-emerald-400 animate-pulse' : 'text-slate-500'}`}></i>
                 </div>
 
-                <div className="space-y-3 text-sm">
-                  <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
-                    <p className="text-slate-400">Event</p>
-                    <p className="mt-1 font-medium text-slate-100">Predictive Traffic Surge Detected</p>
-                  </div>
-                  <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
-                    <p className="text-slate-400">Target</p>
-                    <p className="mt-1 font-medium text-cyan-200">production-auth-cluster</p>
-                  </div>
-                  <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
-                    <p className="text-slate-400">Action Taken</p>
-                    <p className="mt-1 font-medium text-emerald-300">Executed Scaling (+2 nodes)</p>
-                  </div>
-                </div>
-
-                <div className="mt-5 rounded-xl border border-cyan-400/20 bg-cyan-500/5 p-4">
-                  <p className="text-xs uppercase tracking-[0.16em] text-cyan-300">Decision Confidence</p>
-                  <div className="mt-2 flex items-center justify-between">
-                    <p className="text-3xl font-semibold text-cyan-200">{confidence}%</p>
-                    <div className="h-2 w-32 overflow-hidden rounded-full bg-slate-800">
-                      <div className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-emerald-400" style={{ width: `${confidence}%` }}></div>
+                {alert ? (
+                  <div className="animate-enterUp">
+                    <div className="space-y-3 text-sm">
+                      <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+                        <p className="text-slate-400">Severity Trigger</p>
+                        <p className="mt-1 font-medium text-red-400">{alert.severity}</p>
+                      </div>
+                      <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+                        <p className="text-slate-400">Action Deployed</p>
+                        <p className="mt-1 font-medium text-emerald-300">{alert.action}</p>
+                      </div>
+                    </div>
+                    <div className="mt-5 rounded-xl border border-emerald-400/20 bg-slate-950 p-4 font-mono text-xs leading-6 text-emerald-200">
+                      <p className="mb-2 text-emerald-300">Live Reasoning Log</p>
+                      <p>&gt; {alert.reasoning}</p>
+                      <p className="mt-2 text-cyan-400">&gt; Command Execution: {alert.cmd}</p>
                     </div>
                   </div>
-                </div>
-
-                <div className="mt-5 rounded-xl border border-emerald-400/20 bg-slate-950 p-4 font-mono text-xs leading-6 text-emerald-200">
-                  <p className="mb-2 text-emerald-300">AI Reasoning Log (Explainable Cause)</p>
-                  <p>&gt; CPU spiked by 25% in 10s while memory reached 82% threshold.</p>
-                  <p>&gt; Forecast model predicted auth latency breach in 47s (p95).</p>
-                  <p>&gt; Safe policy selected horizontal scale action for pod saturation mitigation.</p>
-                  <p>&gt; Outcome: latency stabilized at 118ms, no customer impact observed.</p>
-                </div>
+                ) : (
+                  <div className="flex h-48 flex-col items-center justify-center text-slate-500">
+                    <i data-lucide="shield" className="mb-3 h-8 w-8 opacity-50"></i>
+                    <p>Monitoring system state...</p>
+                    <p className="text-xs">Awaiting anomalies to execute remediation.</p>
+                  </div>
+                )}
               </aside>
             </section>
           </main>
