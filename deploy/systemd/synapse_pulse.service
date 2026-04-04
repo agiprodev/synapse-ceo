@@ -1,0 +1,18 @@
+[Unit]
+Description=Rises Synapse PRO Pulse Monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/rises-synapse-pro
+EnvironmentFile=-/etc/rises/synapse-pulse.env
+ExecStart=/usr/bin/python3 -m agent.synapse_pulse
+Restart=always
+RestartSec=3
+KillSignal=SIGTERM
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target
