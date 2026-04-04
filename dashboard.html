@@ -3,226 +3,203 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Synapse Beast | Pitch Deck Dashboard</title>
+    <title>Rises Synapse PRO | Autonomous SRE Control Center</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
         darkMode: "class",
         theme: {
           extend: {
+            fontFamily: {
+              sans: ["Inter", "ui-sans-serif", "system-ui"],
+            },
             colors: {
-              beast: {
-                bg: "#070b14",
-                panel: "#0f172a",
-                panelSoft: "#111c34",
-                neon: "#38bdf8",
-                neon2: "#22d3ee",
-                danger: "#fb7185",
-                ok: "#34d399",
-                warning: "#fbbf24",
+              synapse: {
+                bg: "#020617",
+                panel: "#0b1222",
+                panelSoft: "#111a30",
+                cyan: "#22d3ee",
+                blue: "#38bdf8",
+                emerald: "#34d399",
               },
             },
             boxShadow: {
-              neon: "0 0 25px rgba(34, 211, 238, 0.18)",
+              glowCyan: "0 0 30px rgba(56, 189, 248, 0.15)",
+              glowGreen: "0 0 25px rgba(52, 211, 153, 0.2)",
+            },
+            keyframes: {
+              pulseGlow: {
+                "0%, 100%": { boxShadow: "0 0 0 rgba(52,211,153,0.0)" },
+                "50%": { boxShadow: "0 0 14px rgba(52,211,153,0.6)" },
+              },
+              enterUp: {
+                "0%": { opacity: "0", transform: "translateY(10px)" },
+                "100%": { opacity: "1", transform: "translateY(0)" },
+              },
+            },
+            animation: {
+              pulseGlow: "pulseGlow 2s ease-in-out infinite",
+              enterUp: "enterUp 700ms ease-out both",
             },
           },
         },
       };
     </script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
   </head>
-  <body class="min-h-screen bg-beast-bg text-slate-100">
-    <main class="mx-auto max-w-7xl px-4 py-8 sm:px-8">
-      <header class="mb-8 rounded-2xl border border-cyan-400/20 bg-gradient-to-r from-beast-panel to-beast-panelSoft p-6 shadow-neon">
-        <p class="mb-2 text-xs uppercase tracking-[0.2em] text-cyan-300/80">SYNAPSE BEAST • MARKETPLACE-READY</p>
-        <div class="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <h1 class="text-3xl font-bold sm:text-4xl">Autonomous Incident Defense Console</h1>
-            <p class="mt-2 text-slate-300">Live SRE + Cyber posture for investor demos and enterprise sales calls.</p>
+
+  <body class="min-h-screen bg-slate-950 text-slate-200 antialiased">
+    <div id="root"></div>
+
+    <script type="text/babel">
+      const { useEffect, useMemo, useState } = React;
+
+      const MetricCard = ({ icon, label, value, hint, accent = "cyan", delay = 0 }) => (
+        <div
+          className={`group rounded-2xl border border-slate-800 bg-synapse-panel/90 p-5 shadow-glowCyan transition duration-300 hover:-translate-y-1 animate-enterUp ${
+            accent === "emerald" ? "hover:border-emerald-400/40" : "hover:border-cyan-400/40"
+          }`}
+          style={{ animationDelay: `${delay}ms` }}
+        >
+          <div className="flex items-center justify-between">
+            <p className="text-xs uppercase tracking-[0.18em] text-slate-400">{label}</p>
+            <i data-lucide={icon} className={`h-4 w-4 ${accent === "emerald" ? "text-emerald-300" : "text-cyan-300"}`}></i>
           </div>
-          <div class="flex flex-wrap items-center gap-2">
-            <label for="tenantId" class="text-sm text-slate-300">Tenant</label>
-            <input id="tenantId" class="rounded-xl border border-slate-600 bg-slate-900 px-3 py-2 text-sm outline-none ring-cyan-300/40 transition focus:ring" value="demo-tenant" />
-            <button id="refreshBtn" class="rounded-xl bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-cyan-300">Refresh</button>
+          <p className={`mt-3 text-3xl font-semibold ${accent === "emerald" ? "text-emerald-300" : "text-cyan-200"}`}>{value}</p>
+          <p className="mt-2 text-xs text-slate-400">{hint}</p>
+        </div>
+      );
+
+      const SparkChart = () => {
+        const points = useMemo(() => {
+          const arr = [];
+          for (let i = 0; i < 64; i++) {
+            const base = 52 + Math.sin(i / 4) * 8 + Math.random() * 2;
+            const spike = i > 24 && i < 32 ? (i - 24) * 6 : i >= 32 && i < 40 ? (40 - i) * 6 : 0;
+            const stabilized = i > 40 ? -Math.sin(i / 2) * 4 - 5 : 0;
+            const v = Math.max(20, Math.min(90, base + spike + stabilized));
+            arr.push(v);
+          }
+          return arr;
+        }, []);
+
+        const path = points
+          .map((v, i) => `${i === 0 ? "M" : "L"} ${(i / (points.length - 1)) * 100} ${100 - v}`)
+          .join(" ");
+
+        return (
+          <div className="relative overflow-hidden rounded-2xl border border-cyan-400/20 bg-gradient-to-br from-slate-950 to-synapse-panel p-6 shadow-glowCyan animate-enterUp">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-slate-100">Live Pulse Visualizer</h3>
+              <div className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-200">Spike Neutralized</div>
+            </div>
+            <div className="relative h-64 rounded-xl border border-slate-800 bg-slate-950/70 p-4">
+              <svg viewBox="0 0 100 100" className="h-full w-full">
+                <defs>
+                  <linearGradient id="lineGradient" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%" stopColor="#22d3ee" />
+                    <stop offset="100%" stopColor="#34d399" />
+                  </linearGradient>
+                </defs>
+                <path d={path} fill="none" stroke="url(#lineGradient)" strokeWidth="1.6" strokeLinecap="round">
+                  <animate attributeName="stroke-dasharray" values="0,300;300,0" dur="3s" repeatCount="indefinite" />
+                </path>
+              </svg>
+              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(56,189,248,0.15),transparent_50%)]"></div>
+              <div className="absolute right-4 top-4 text-xs text-slate-400">CPU / Memory Stream • 4ms tick</div>
+            </div>
           </div>
-        </div>
-      </header>
-
-      <section class="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <article class="rounded-2xl border border-slate-700 bg-beast-panel p-5">
-          <p class="text-xs uppercase tracking-wide text-slate-400">Total Incidents</p>
-          <p id="incidentsCount" class="mt-3 text-3xl font-bold text-cyan-300">—</p>
-        </article>
-        <article class="rounded-2xl border border-slate-700 bg-beast-panel p-5">
-          <p class="text-xs uppercase tracking-wide text-slate-400">Auto-Resolved</p>
-          <p id="autoResolvedCount" class="mt-3 text-3xl font-bold text-emerald-300">—</p>
-        </article>
-        <article class="rounded-2xl border border-slate-700 bg-beast-panel p-5">
-          <p class="text-xs uppercase tracking-wide text-slate-400">Escalated</p>
-          <p id="escalatedCount" class="mt-3 text-3xl font-bold text-rose-300">—</p>
-        </article>
-        <article class="rounded-2xl border border-slate-700 bg-beast-panel p-5">
-          <p class="text-xs uppercase tracking-wide text-slate-400">Protected Value</p>
-          <p id="impactDollars" class="mt-3 text-3xl font-bold text-amber-300">—</p>
-        </article>
-      </section>
-
-      <section class="rounded-2xl border border-slate-700 bg-beast-panel p-6">
-        <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 class="text-xl font-semibold">Incident Timeline</h2>
-          <div class="flex gap-2">
-            <button data-days="7" class="range-btn rounded-lg border border-slate-600 px-3 py-1.5 text-sm text-slate-300 hover:border-cyan-300 hover:text-cyan-200">7 Days</button>
-            <button data-days="30" class="range-btn rounded-lg border border-cyan-400 bg-cyan-400/10 px-3 py-1.5 text-sm text-cyan-200">30 Days</button>
-          </div>
-        </div>
-
-        <div class="overflow-hidden rounded-xl border border-slate-700">
-          <table class="min-w-full divide-y divide-slate-700 text-sm">
-            <thead class="bg-slate-900/70 text-left text-xs uppercase tracking-wide text-slate-400">
-              <tr>
-                <th class="px-4 py-3">Time</th>
-                <th class="px-4 py-3">Service</th>
-                <th class="px-4 py-3">Error Rate</th>
-                <th class="px-4 py-3">Status</th>
-                <th class="px-4 py-3">Action</th>
-              </tr>
-            </thead>
-            <tbody id="timelineBody" class="divide-y divide-slate-800 bg-slate-950/40"></tbody>
-          </table>
-        </div>
-
-        <p id="statusLine" class="mt-4 text-xs text-slate-400">Waiting for data...</p>
-      </section>
-    </main>
-
-    <script>
-      const elements = {
-        tenantId: document.getElementById("tenantId"),
-        refreshBtn: document.getElementById("refreshBtn"),
-        incidentsCount: document.getElementById("incidentsCount"),
-        autoResolvedCount: document.getElementById("autoResolvedCount"),
-        escalatedCount: document.getElementById("escalatedCount"),
-        impactDollars: document.getElementById("impactDollars"),
-        timelineBody: document.getElementById("timelineBody"),
-        statusLine: document.getElementById("statusLine"),
-        rangeButtons: [...document.querySelectorAll(".range-btn")],
+        );
       };
 
-      let selectedDays = 30;
+      const App = () => {
+        const [confidence] = useState(94);
 
-      function setLoadingState() {
-        elements.statusLine.textContent = "Syncing with Beast APIs...";
-      }
+        useEffect(() => {
+          lucide.createIcons();
+        }, []);
 
-      function setErrorState(message) {
-        elements.statusLine.textContent = `Error: ${message}`;
-      }
+        return (
+          <main className="mx-auto max-w-7xl px-6 py-8 lg:px-10">
+            <nav className="mb-6 rounded-2xl border border-slate-800 bg-synapse-panel/90 p-4 shadow-glowCyan backdrop-blur animate-enterUp">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="rounded-xl border border-cyan-400/30 bg-cyan-400/10 p-2">
+                    <i data-lucide="cpu" className="h-5 w-5 text-cyan-300"></i>
+                  </div>
+                  <div>
+                    <p className="text-sm uppercase tracking-[0.2em] text-slate-400">Rises</p>
+                    <h1 className="text-xl font-semibold text-slate-100">Synapse PRO</h1>
+                  </div>
+                </div>
 
-      function formatCurrency(value) {
-        return new Intl.NumberFormat("en-US", {
-          style: "currency",
-          currency: "USD",
-          maximumFractionDigits: 0,
-        }).format(value || 0);
-      }
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-200 animate-pulseGlow">
+                    <span className="h-2 w-2 rounded-full bg-emerald-300"></span>
+                    Autonomous Mode Active
+                  </div>
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-700 bg-slate-900 text-sm font-semibold text-cyan-200">CTO</div>
+                </div>
+              </div>
+            </nav>
 
-      function statusBadge(status) {
-        const normalized = (status || "").toLowerCase();
-        if (normalized === "auto_resolved") {
-          return '<span class="rounded-full bg-emerald-400/20 px-2 py-1 text-xs text-emerald-200">AUTO_RESOLVED</span>';
-        }
-        if (normalized === "escalated") {
-          return '<span class="rounded-full bg-rose-400/20 px-2 py-1 text-xs text-rose-200">ESCALATED</span>';
-        }
-        return `<span class="rounded-full bg-slate-600/40 px-2 py-1 text-xs text-slate-200">${status || "unknown"}</span>`;
-      }
+            <section className="mb-6 grid gap-4 lg:grid-cols-3">
+              <MetricCard icon="shield-check" label="Incidents Prevented" value="14" hint="This week across production workloads" delay={50} />
+              <MetricCard icon="zap" label="Near-Zero MTTR" value="0.4s" hint="Average autonomous remediation window" delay={150} />
+              <MetricCard icon="banknote" label="Total Value Protected" value="$4,500" hint="Estimated outage + churn loss avoided" accent="emerald" delay={250} />
+            </section>
 
-      function renderTimeline(incidents) {
-        if (!incidents?.length) {
-          elements.timelineBody.innerHTML = '<tr><td colspan="5" class="px-4 py-6 text-center text-slate-400">No incidents found in this window.</td></tr>';
-          return;
-        }
+            <section className="grid gap-6 lg:grid-cols-[1.35fr_1fr]">
+              <SparkChart />
 
-        elements.timelineBody.innerHTML = incidents
-          .map((item) => {
-            const occurred = new Date(item.occurred_at).toLocaleString();
-            const serviceName = item.title || "Unknown service";
-            const errorRate = typeof item.error_rate === "number" ? `${item.error_rate.toFixed(2)}%` : "—";
-            const action = item.action_taken || "Queued diagnosis";
+              <aside className="rounded-2xl border border-slate-800 bg-synapse-panel/90 p-6 shadow-glowGreen animate-enterUp">
+                <div className="mb-4 flex items-center justify-between">
+                  <h3 className="text-lg font-semibold">Recent Autonomous Action</h3>
+                  <i data-lucide="bot" className="h-5 w-5 text-cyan-300"></i>
+                </div>
 
-            return `
-              <tr class="hover:bg-slate-900/50">
-                <td class="px-4 py-3 text-slate-300">${occurred}</td>
-                <td class="px-4 py-3 font-medium text-slate-100">${serviceName}</td>
-                <td class="px-4 py-3 text-rose-200">${errorRate}</td>
-                <td class="px-4 py-3">${statusBadge(item.status)}</td>
-                <td class="px-4 py-3 text-cyan-200">${action}</td>
-              </tr>
-            `;
-          })
-          .join("");
-      }
+                <div className="space-y-3 text-sm">
+                  <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+                    <p className="text-slate-400">Event</p>
+                    <p className="mt-1 font-medium text-slate-100">Predictive Traffic Surge Detected</p>
+                  </div>
+                  <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+                    <p className="text-slate-400">Target</p>
+                    <p className="mt-1 font-medium text-cyan-200">production-auth-cluster</p>
+                  </div>
+                  <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+                    <p className="text-slate-400">Action Taken</p>
+                    <p className="mt-1 font-medium text-emerald-300">Executed Scaling (+2 nodes)</p>
+                  </div>
+                </div>
 
-      async function fetchJSON(url) {
-        const res = await fetch(url);
-        if (!res.ok) {
-          let errorDetails = `${res.status} ${res.statusText}`;
-          try {
-            const body = await res.json();
-            if (body.detail) errorDetails = body.detail;
-          } catch (_err) {
-            // best effort
-          }
-          throw new Error(errorDetails);
-        }
-        return res.json();
-      }
+                <div className="mt-5 rounded-xl border border-cyan-400/20 bg-cyan-500/5 p-4">
+                  <p className="text-xs uppercase tracking-[0.16em] text-cyan-300">Decision Confidence</p>
+                  <div className="mt-2 flex items-center justify-between">
+                    <p className="text-3xl font-semibold text-cyan-200">{confidence}%</p>
+                    <div className="h-2 w-32 overflow-hidden rounded-full bg-slate-800">
+                      <div className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-emerald-400" style={{ width: `${confidence}%` }}></div>
+                    </div>
+                  </div>
+                </div>
 
-      async function refreshDashboard() {
-        const tenantId = elements.tenantId.value.trim();
-        if (!tenantId) {
-          setErrorState("tenant_id is required");
-          return;
-        }
+                <div className="mt-5 rounded-xl border border-emerald-400/20 bg-slate-950 p-4 font-mono text-xs leading-6 text-emerald-200">
+                  <p className="mb-2 text-emerald-300">AI Reasoning Log (Explainable Cause)</p>
+                  <p>&gt; CPU spiked by 25% in 10s while memory reached 82% threshold.</p>
+                  <p>&gt; Forecast model predicted auth latency breach in 47s (p95).</p>
+                  <p>&gt; Safe policy selected horizontal scale action for pod saturation mitigation.</p>
+                  <p>&gt; Outcome: latency stabilized at 118ms, no customer impact observed.</p>
+                </div>
+              </aside>
+            </section>
+          </main>
+        );
+      };
 
-        setLoadingState();
-
-        try {
-          const [roi, incidents] = await Promise.all([
-            fetchJSON(`/v1/dashboard/roi?tenant_id=${encodeURIComponent(tenantId)}&days=${selectedDays}`),
-            fetchJSON(`/v1/dashboard/incidents?tenant_id=${encodeURIComponent(tenantId)}&limit=50`),
-          ]);
-
-          elements.incidentsCount.textContent = roi.incidents_count;
-          elements.autoResolvedCount.textContent = roi.auto_resolved_count;
-          elements.escalatedCount.textContent = roi.escalated_count;
-          elements.impactDollars.textContent = formatCurrency(roi.total_impact_dollars);
-
-          renderTimeline(incidents.incidents || []);
-          elements.statusLine.textContent = `Loaded ${incidents.total} incidents for ${tenantId} • window ${selectedDays} days.`;
-        } catch (err) {
-          setErrorState(err.message || "Unable to fetch dashboard data");
-        }
-      }
-
-      function setActiveRange(days) {
-        selectedDays = days;
-        elements.rangeButtons.forEach((btn) => {
-          const isActive = Number(btn.dataset.days) === days;
-          btn.className = isActive
-            ? "range-btn rounded-lg border border-cyan-400 bg-cyan-400/10 px-3 py-1.5 text-sm text-cyan-200"
-            : "range-btn rounded-lg border border-slate-600 px-3 py-1.5 text-sm text-slate-300 hover:border-cyan-300 hover:text-cyan-200";
-        });
-      }
-
-      elements.refreshBtn.addEventListener("click", refreshDashboard);
-      elements.rangeButtons.forEach((btn) => {
-        btn.addEventListener("click", () => {
-          setActiveRange(Number(btn.dataset.days));
-          refreshDashboard();
-        });
-      });
-
-      refreshDashboard();
+      ReactDOM.createRoot(document.getElementById("root")).render(<App />);
     </script>
   </body>
 </html>
