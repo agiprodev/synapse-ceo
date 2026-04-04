@@ -1,6 +1,9 @@
+import asyncio
+import json
 from datetime import datetime, timedelta, timezone
 from fastapi import FastAPI, Header, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
+import psutil
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -12,6 +15,7 @@ from apps.api.security.signer import sign_action
 from apps.api.actions.pending import ApprovalManager
 from apps.api.learning.memory_store import MemoryStore
 from apps.api.db import get_db
+from agent.synapse_pulse import SynapsePulse, load_config
 from apps.api.models import (
     Agent,
     AgentStatus,
@@ -27,9 +31,40 @@ app = FastAPI(title="Synapse Beast Central Node")
 memory_store = MemoryStore()
 
 
+@app.get("/", include_in_schema=False)
+async def root_dashboard_page():
+    return FileResponse("dashboard.html")
+
+
 @app.get("/dashboard", include_in_schema=False)
 async def dashboard_page():
     return FileResponse("dashboard.html")
+
+
+@app.get("/stream", include_in_schema=False)
+async def stream_metrics():
+    async def event_generator():
+        monitor = SynapsePulse(load_config())
+        psutil.cpu_percent()
+
+        while True:
+            await asyncio.sleep(1)
+            cpu = psutil.cpu_percent()
+            mem = psutil.virtual_memory().percent
+            yield f"data: {json.dumps({'type': 'metrics', 'cpu': cpu, 'mem': mem})}\n\n"
+
+            alert = monitor.analyze(cpu_now=cpu, mem_percent=mem)
+            if alert:
+                alert_data = {
+                    "type": "alert",
+                    "severity": alert.severity,
+                    "reasoning": alert.reasoning,
+                    "action": alert.action,
+                    "cmd": alert.remediation_cmd or "Scaling triggered automatically",
+                }
+                yield f"data: {json.dumps(alert_data)}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 class IncidentPayload(BaseModel):
     customer_id: str
